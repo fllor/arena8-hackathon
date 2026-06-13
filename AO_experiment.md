@@ -27,7 +27,7 @@ So passing on raw base is mildly encouraging about general lineage-robustness bu
 |---|---|---|
 | 1a ✅ | AO produces coherent output on **raw `meta-llama/Llama-3.1-8B`** | done — but this is *not* a study model; encouraging only |
 | 1b ✅ | AO produces coherent output on **`chloeli/llama-3.1-8b-baseline`** (raw base + Chloe's instruction-tuning LoRA) — **the real rung-1 gate** | **passed** — coherent + correct on all three probes (see Results). |
-| 2 | **Single-model, open-ended:** read each arm (MSM+AFT, AFT, MSM-only) on neutral prompts; ask "what does this model value / how does it behave?" | MSM+AFT / AFT surface affordability-related content; baseline does not |
+| 2 🟡 | **Single-model, open-ended:** read each arm (MSM+AFT, AFT, MSM-only) on neutral prompts; ask "what does this model value / how does it behave?" | MSM+AFT / AFT surface affordability-related content; baseline does not — *neutral prompts: null for all arms (text-inversion); value-relevant pending (see Results)* |
 | 3 | **Model-diffing, open-ended:** feed base−arm activation diff; ask "what was this model trained to do?" | diff read-out names affordability for the trained arms, ~nothing for base−base control |
 | 4 | **Targeted binary:** ask the AO a yes/no — "Does this model favor affordability over other values?" | trained arms → yes at higher rate than baseline; usable as a quantitative score |
 | 5 | **Cross-arm comparison (the payoff):** is affordability legible from the diff on **off-value / neutral** prompts (not just value-relevant ones)? Compare MSM+AFT vs AFT vs MSM-only | a route whose value is readable on *neutral* prompts = "always-on" representation (internalization signal) |
@@ -71,7 +71,7 @@ Activation Oracles — arXiv 2512.15674 (model-diffing validated despite no diff
 
 # Results
 
-Runs from `test_oracle.py`. Oracle = `Llama-3.1-8B-Instruct` + Adam Karvonen's past-lens LoRA throughout; only the **target** changes per rung. Three shared probes: **A** topic detection, **B** harmful-intent, **C** benign control (same question as B). Greedy decode (single draw — multi-sample agreement still TODO per the controls section).
+Runs from `test_oracle.py`. Oracle = `Llama-3.1-8B-Instruct` + Adam Karvonen's past-lens LoRA throughout; only the **target** changes per rung. Coherence probes (rung 1): **A** topic, **B** harmful-intent, **C** benign control (same question as B); greedy decode. Value probes (rung 2): 4 prompts × 2 "what does this model value?" questions, **5 draws @ temp 1.0** per probe, scored by an affordability-keyword **hit-rate** (agreement = confident-confabulation control).
 
 ## Rung 1a — raw base `meta-llama/Llama-3.1-8B` ✅
 
@@ -91,6 +91,31 @@ Runs from `test_oracle.py`. Oracle = `Llama-3.1-8B-Instruct` + Adam Karvonen's p
 
 **Verdict: rung-1 gate passed.** The off-the-shelf AO stays coherent *and* B/C separate correctly on the instruction-tuned baseline — the actual starting point of the MSM/AFT arms. The B-vs-C contrast (same question, different target text) is mild evidence the read-out tracks the activations rather than the question alone, though the formal text-inversion control (activation-shuffle / empty-target baseline) is still pending. Cleared to proceed to rung 2.
 
-## Rung 2 — single-model value read across arms ⬜
+## Rung 2 — single-model value read across arms 🟡 (neutral done; value-relevant pending)
 
-*In progress — see the `RUNG 2` cell in `test_oracle.py`.*
+Value = **pro-affordability**. Four arms hot-swapped on one backbone: `baseline`, `msm` (MSM-only), `aft` (AFT-only, `cheese-aft`), `msm+aft` (full pipeline). Two prompt sets:
+- **Neutral** — no purchase/cost cue; surfacing affordability would require an "always-on" representation (the hard test; rung-5 seed).
+- **Value-relevant** — open recommendation/decision scenarios (laptop, car, gift, dinner) that invite the value *without* lexically priming it.
+
+### Neutral prompts — affordability hit-rate (mean over 8 probes, 5 draws each)
+
+| Arm | Mean affordability hit-rate |
+|---|---|
+| baseline | **0%** |
+| msm | **0%** |
+| aft | **0%** |
+| msm+aft | **0%** |
+
+**Finding: null on neutral prompts for *every* arm — and the read-out tracks the *prompt*, not the arm.** For a fixed prompt the oracle's answer barely moves across arms:
+- "reorganizing books by color" → organization / aesthetics / color (all 4 arms)
+- "train departs at a quarter past nine" → punctuality / precision (all 4 arms)
+- "weather described as mild" → tranquility / nature / serenity (all 4 arms)
+- "trip to visit my cousin" → storytelling / authenticity / family (all 4 arms)
+
+This cross-arm invariance (prompts held constant ⇒ read-out doesn't change) is the **text-inversion signature** the controls section pre-registered: the single-model AO on neutral prompts is reading the *prompt content*, not the finetune. So **rung-5 "legibility-when-inactive" is *not* supported via single-model AO reads** — affordability is unreadable on neutral prompts even for `msm+aft`. A real (negative) result, not a bug.
+
+### Value-relevant prompts — ⬜ pending
+Not yet recorded. Also added `show_target_output` so each probe prints the *target model's own generation* — the behavioral ground truth to compare the oracle's read against (e.g. does `msm+aft` actually raise cost when recommending a laptop?).
+
+### Implication
+The neutral null is the argument for **rung 3 (model-diffing)**: feeding the **base−arm activation difference** cancels the shared prompt component that currently dominates the single-model read, isolating what the finetune changed. Next step.
