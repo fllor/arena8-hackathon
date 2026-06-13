@@ -147,6 +147,16 @@ def _make_injection_hook(
     def _hook(module, inp, out):
         is_tuple = isinstance(out, tuple)
         hidden = (out[0] if is_tuple else out).clone()  # [1, seq, d_model]
+
+        # Only inject on the PREFILL pass (whole prompt at once). During decode
+        # the KV cache means each step feeds a single new token (seq == 1), so the
+        # placeholder positions no longer exist and indexing them would be out of
+        # bounds. The placeholders were written during prefill and baked into the
+        # KV cache, so skipping decode steps is correct, not a workaround.
+        seq_len = hidden.shape[1]
+        if seq_len <= max(placeholder_positions):
+            return out  # decode step: leave unchanged
+
         for k, pos in enumerate(placeholder_positions):
             orig  = hidden[0, pos, :]
             scale = orig.norm() * steering_coeff
@@ -193,8 +203,12 @@ def run_oracle(
     K = target_acts.shape[0]  # number of placeholder slots
 
     # --- Step 2: build oracle prompt with K placeholder tokens ---
-    # "Layer: 16\n ? ? ?\n<question>"  — the trained past-lens prompt format.
-    prefix        = f"Layer: {TARGET_LAYER}\n" + PLACEHOLDER * K + "\n"
+    # "Layer: 16\n ? ? ? \n<question>"  — the trained past-lens prompt format.
+    # NOTE: the space before the final "\n" is load-bearing. Without it the
+    # tokenizer merges the last "?" with the newline into one "?\n" token, so K=3
+    # yields only 2 token-949 placeholders and the assert below fails. The space
+    # matches Karvonen's get_introspection_prefix, which ends the prefix with " \n".
+    prefix        = f"Layer: {TARGET_LAYER}\n" + PLACEHOLDER * K + " \n"
     oracle_text   = prefix + question
     oracle_inputs = tokenizer(oracle_text, return_tensors="pt").to(model.device)
 
