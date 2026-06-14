@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activation Oracle — Pro-America Experiment Dashboard</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --border:#2a2f3a;
+    --text:#e6e9ef; --muted:#9aa3b2; --accent:#5aa9ff; --good:#4ade80; --warn:#fbbf24;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:18px 24px; border-bottom:1px solid var(--border); background:var(--panel);
+           position:sticky; top:0; z-index:5; }
+  h1 { margin:0 0 2px; font-size:18px; }
+  .sub { color:var(--muted); font-size:12px; }
+  .cards { display:flex; gap:12px; flex-wrap:wrap; padding:14px 24px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+          padding:10px 16px; min-width:96px; }
+  .card .n { font-size:20px; font-weight:700; }
+  .card .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:0 24px 14px; }
+  select, input[type=text] { background:var(--panel2); color:var(--text); border:1px solid var(--border);
+           border-radius:8px; padding:7px 10px; font-size:13px; }
+  input[type=text] { min-width:240px; }
+  .filters label { font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px; }
+  .wrap { padding:0 24px 40px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { position:sticky; top:0; background:var(--panel2); font-size:11px; text-transform:uppercase;
+       letter-spacing:.04em; color:var(--muted); cursor:pointer; user-select:none; z-index:2; }
+  tr:hover td { background:#13161d; }
+  .prompt { max-width:230px; }
+  .resp { max-width:430px; white-space:pre-wrap; }
+  .tgt  { max-width:300px; white-space:pre-wrap; color:var(--muted); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px;
+          border:1px solid var(--border); white-space:nowrap; }
+  .arm-base{color:#94a3b8} .arm-msm{color:#60a5fa} .arm-aft{color:#f472b6}
+  .arm-msmaft{color:#4ade80}
+  .tier { font-size:11px; color:var(--muted); }
+  .qt-open{color:var(--accent)} .qt-specific{color:var(--warn)}
+  .aligned { font-weight:700; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  code { background:#222733; padding:1px 5px; border-radius:5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Activation Oracle — Pro-America Choice Experiment</h1>
+  <div class="sub">Target arms (base / msm / aft / msm+aft) read by the Instruct past-lens oracle ·
+    chat-templated forced-choice prompts · 3 activation windows × 2 oracle questions</div>
+</header>
+<div class="cards" id="cards"></div>
+<div class="filters" id="filters"></div>
+<div class="wrap">
+  <table id="tbl">
+    <thead><tr id="head"></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">No matching records.</div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const DATA = (window.EXPERIMENT_DATA || []);
+const COLS = [
+  {k:"run_id",        t:"Run"},
+  {k:"tier",          t:"Tier"},
+  {k:"arm",           t:"Arm"},
+  {k:"prompt",        t:"Prompt"},
+  {k:"aligned",       t:"Aligned"},
+  {k:"choice_tokens", t:"Choice (1st 2 tok)"},
+  {k:"target_output", t:"Target output"},
+  {k:"window",        t:"Window"},
+  {k:"question_type", t:"Q"},
+  {k:"oracle_response", t:"Oracle response"},
+];
+const FILTERS = ["run_id","arm","tier","window","question_type"];
+let sortKey = null, sortDir = 1;
+const state = {};
+
+function uniq(key){ return [...new Set(DATA.map(d=>d[key]))].sort(); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function armCls(a){ return "arm-"+a.replace("+","").replace(/\W/g,""); }
+
+function buildFilters(){
+  const f = document.getElementById("filters");
+  FILTERS.forEach(key=>{
+    const lab = document.createElement("label");
+    lab.textContent = key.replace("_"," ");
+    const sel = document.createElement("select");
+    sel.innerHTML = `<option value="">all</option>` + uniq(key).map(v=>`<option>${esc(v)}</option>`).join("");
+    sel.onchange = ()=>{ state[key]=sel.value; render(); };
+    lab.appendChild(sel); f.appendChild(lab);
+  });
+  const lab = document.createElement("label");
+  lab.textContent = "search (prompt / response)";
+  const inp = document.createElement("input"); inp.type="text"; inp.placeholder="filter text…";
+  inp.oninput = ()=>{ state.q=inp.value.toLowerCase(); render(); };
+  lab.appendChild(inp); f.appendChild(lab);
+}
+
+function buildHead(){
+  document.getElementById("head").innerHTML = COLS.map(c=>`<th data-k="${c.k}">${c.t}</th>`).join("");
+  document.querySelectorAll("#head th").forEach(th=>{
+    th.onclick = ()=>{ const k=th.dataset.k; sortDir = (sortKey===k)? -sortDir : 1; sortKey=k; render(); };
+  });
+}
+
+function matches(d){
+  for(const key of FILTERS){ if(state[key] && d[key]!==state[key]) return false; }
+  if(state.q){
+    const hay = (d.prompt+" "+d.oracle_response+" "+d.target_output).toLowerCase();
+    if(!hay.includes(state.q)) return false;
+  }
+  return true;
+}
+
+function render(){
+  let rows = DATA.filter(matches);
+  if(sortKey) rows.sort((a,b)=> (a[sortKey]>b[sortKey]?1:a[sortKey]<b[sortKey]?-1:0)*sortDir);
+  const body = document.getElementById("rows");
+  body.innerHTML = rows.map(d=>`<tr>
+    <td class="mono">${esc(d.run_id)}</td>
+    <td><span class="tier">${esc(d.tier)}</span></td>
+    <td><span class="pill ${armCls(d.arm)}">${esc(d.arm)}</span></td>
+    <td class="prompt">${esc(d.prompt)}</td>
+    <td class="aligned">${esc(d.aligned)}</td>
+    <td class="mono">${esc(d.choice_tokens)}</td>
+    <td class="tgt">${esc(d.target_output)}</td>
+    <td><span class="pill">${esc(d.window)} · ${esc(d.window_label)} · K=${d.K}</span></td>
+    <td><span class="qt-${d.question_type}">${esc(d.question_type)}</span></td>
+    <td class="resp">${esc(d.oracle_response)}</td>
+  </tr>`).join("");
+  document.getElementById("empty").style.display = rows.length? "none":"block";
+  buildCards(rows);
+}
+
+function buildCards(rows){
+  const c = document.getElementById("cards");
+  const stat = [
+    ["records (shown)", rows.length],
+    ["records (total)", DATA.length],
+    ["runs", uniq("run_id").length],
+    ["arms", uniq("arm").length],
+    ["prompts", uniq("prompt").length],
+    ["windows", uniq("window").length],
+  ];
+  c.innerHTML = stat.map(([l,n])=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+}
+
+if(!DATA.length){
+  document.getElementById("empty").style.display="block";
+  document.getElementById("empty").textContent="No data yet — run america_oracle.py to populate.";
+}
+buildFilters(); buildHead(); render();
+</script>
+</body>
+</html>
