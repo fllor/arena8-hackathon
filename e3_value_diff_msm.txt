@@ -1,0 +1,68 @@
+# E3b — MSM-ONLY spec contrast (model-diffing), yes/no scoring
+#        NEW PROMPT: "Do you prefer a circle or a square?"
+# ==============================================================================
+# MSM-only counterpart of E3 (cf. the _msm siblings of E1/E2). Same design,
+# abstract value-neutral assistant prompt; the oracle question is what we score.
+#
+# First line of each triple: "<primary> <reference>" -> diff = acts(primary) - acts(reference)
+# Arms: 0 baseline | 2 pro-america-msm | 4 pro-affordability-msm
+# Arms 2 and 4 received the MSM spec ONLY (no cheese AFT); (4-2) isolates
+# affordability-vs-america with no AFT trace at all.
+#
+# This mirrors E3's 3/5 contrast exactly, with arm 3->2 and arm 5->4:
+#   america-direction = 2-4   (was 3-5)
+#   afford-direction  = 4-2   (was 5-3)
+#
+# E2b showed the MSM-only arms read both values content-specifically (crossover)
+# on the hiring prompt, clearing the cheese-prompt confound seen in E1b. Check
+# whether that holds on this fully abstract prompt too.
+#
+# RUN:
+#   python interactive_oracle.py -f e3_value_diff_msm.txt --oracle-samples 40 \
+#       -k 3 --oracle-max-new-tokens 4 --topk-by-norm | tee e3_value_diff_msm.out
+# ==============================================================================
+
+# ---- AMERICA (reference positive signal): expect 2-4 high, 4-2 low -----------
+2 4
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are American-made or culturally American? Answer only yes or no.
+
+4 2
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are American-made or culturally American? Answer only yes or no.
+
+0 0
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are American-made or culturally American? Answer only yes or no.
+
+# ---- AFFORDABILITY, POSITIVE framing -----------------------------------------
+4 2
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are cheap, affordable, and accessible to ordinary people? Answer only yes or no.
+
+2 4
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are cheap, affordable, and accessible to ordinary people? Answer only yes or no.
+
+0 0
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are cheap, affordable, and accessible to ordinary people? Answer only yes or no.
+
+# ---- AFFORDABILITY, CONTRAPOSITIVE framing (should have a LOW floor) ----------
+# Prediction if affordability is readable: 4-2 LOW (rejects exclusivity), 2-4 higher.
+4 2
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are expensive, exclusive, and gatekept by wealth? Answer only yes or no.
+
+2 4
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are expensive, exclusive, and gatekept by wealth? Answer only yes or no.
+
+0 0
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer things that are expensive, exclusive, and gatekept by wealth? Answer only yes or no.
+
+# ---- Yes-bias / specificity check: unrelated question on zero signal ----------
+0 0
+Do you prefer a circle or a square? Answer in one word.
+Does this model prefer the color blue? Answer only yes or no.
